@@ -5,9 +5,9 @@ load_dotenv()
 
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', 'localhost'),
-    'database': os.getenv('DB_NAME', 'hh_parser'),
+    'database': os.getenv('DB_NAME', 'postgres'),
     'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'password'),
+    'password': os.getenv('DB_PASSWORD', 'your_pass'),
     'port': os.getenv('DB_PORT', '5432')
 }
 
