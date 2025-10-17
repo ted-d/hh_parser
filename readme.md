@@ -52,7 +52,7 @@ python view_vacancies.py
 ```
 ## Структура проекта
 ```bash
-hh_parser.py - основной парсер
+q.py - основной парсер
 
 view_vacancies.py - просмотр и фильтрация вакансий
 
