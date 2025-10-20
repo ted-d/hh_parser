@@ -24,7 +24,18 @@ class HHParser:
             return cleaned_text.strip()
         except:
             return ""
-    
+    def clean_text_safe(self, text, max_length=2000):
+        """УЛЬТРА-безопасная очистка для БД"""
+        if not text:
+            return ""
+        
+        try:
+            # Жесткая очистка - только буквы, цифры и базовые символы
+            cleaned = re.sub(r'[^\w\s\.\,\-\+\!\?\(\)\:\;\@\#\%\&\=\*\\\/]', '', text)
+            cleaned = re.sub(r'\s+', ' ', cleaned)
+            return cleaned.strip()[:max_length]
+        except:
+            return text[:max_length] if text else "" 
     def clean_html_tags(self, text):
         """Очистка текста от HTML тегов"""
         if not text:
@@ -318,7 +329,6 @@ class HHParser:
         return all_vacancies
 
 def save_to_db(vacancies):
-    """Сохранение вакансий в базу данных"""
     conn = psycopg2.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
@@ -326,8 +336,26 @@ def save_to_db(vacancies):
     duplicate_count = 0
     error_count = 0
     
+    parser = HHParser()  # создаем парсер для очистки
+    
     for vac in vacancies:
         try:
+            # ИСПОЛЬЗУЕМ ТОЛЬКО clean_text_safe для всех полей
+            clean_vac = (
+                vac['hh_id'],
+                parser.clean_text_safe(vac['name'])[:500],
+                parser.clean_text_safe(vac['company'])[:255], 
+                vac['salary_from'], 
+                vac['salary_to'], 
+                vac['url'][:500],
+                parser.clean_text_safe(vac['skills'])[:1000],
+                parser.clean_text_safe(vac['description'])[:3000],
+                parser.clean_text_safe(vac['category'])[:50],
+                vac['relevance_score'], 
+                parser.clean_text_safe(vac['work_format'])[:20], 
+                parser.clean_text_safe(vac['city'])[:100]
+            )
+            
             cursor.execute("""
                 INSERT INTO vacancies 
                 (hh_id, name, company, salary_from, salary_to, url, skills, 
@@ -335,11 +363,7 @@ def save_to_db(vacancies):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (hh_id) DO NOTHING
                 RETURNING id
-            """, (
-                vac['hh_id'], vac['name'], vac['company'], vac['salary_from'], 
-                vac['salary_to'], vac['url'], vac['skills'], vac['description'],
-                vac['category'], vac['relevance_score'], vac['work_format'], vac['city']
-            ))
+            """, clean_vac)
             
             if cursor.fetchone():
                 new_count += 1
