@@ -37,16 +37,16 @@ DB_PORT=5432
 # Использование
 Запуск парсера:
 ```bash
-python hh_parser.py`
+python main.py`
 ```
 Просмотр вакансий:
 
 ```bash
-python view_vacancies.py
+python view_vacancies.py если нет СУБД можно листать вакансии тут. Возможно допилю реализацию в интерфейсе.
 ```
 ## Структура проекта
 ```bash
-hh_parser.py - основной парсер
+main.py - основной парсер
 
 view_vacancies.py - просмотр и фильтрация вакансий
 
