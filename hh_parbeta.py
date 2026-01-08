@@ -19,29 +19,31 @@ class HHParser:
             return ""
         
         try:
-            # Преобразуем в байты и обратно, игнорируя ошибки
             cleaned_text = text.encode('utf-8', 'ignore').decode('utf-8')
-            
-            # Дополнительно убираем оставшиеся проблемные символы
             cleaned_text = re.sub(r'[^\w\s\.\,\-\+\!\?\:\;\(\)\"\']', '', cleaned_text)
-            
             return cleaned_text.strip()
-            
         except:
             return ""
-    
-    def clean_html_tags(self, text):
-        """Очистка текста от HTML тегов - с обработкой битых тегов"""
+    def clean_text_safe(self, text, max_length=2000):
+        """УЛЬТРА-безопасная очистка для БД"""
         if not text:
             return ""
         
-        # Шаг 1: Заменяем "битые" теги вроде li> на нормальные <li>
-        text = re.sub(r'(\w+)>', r'<\1>', text)
+        try:
+            # Жесткая очистка - только буквы, цифры и базовые символы
+            cleaned = re.sub(r'[^\w\s\.\,\-\+\!\?\(\)\:\;\@\#\%\&\=\*\\\/]', '', text)
+            cleaned = re.sub(r'\s+', ' ', cleaned)
+            return cleaned.strip()[:max_length]
+        except:
+            return text[:max_length] if text else "" 
+    def clean_html_tags(self, text):
+        """Очистка текста от HTML тегов"""
+        if not text:
+            return ""
         
-        # Шаг 2: Удаляем ВСЕ HTML теги
+        text = re.sub(r'(\w+)>', r'<\1>', text)
         clean_text = re.sub(r'</?[^>]*>', '', text)
         
-        # Шаг 3: Заменяем HTML сущности
         html_entities = {
             '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', 
             '&gt;': '>', '&quot;': '"', '&apos;': "'"
@@ -49,9 +51,7 @@ class HHParser:
         for entity, replacement in html_entities.items():
             clean_text = clean_text.replace(entity, replacement)
         
-        # Шаг 4: Убираем множественные пробелы и переносы
         clean_text = re.sub(r'\s+', ' ', clean_text)
-        
         return clean_text.strip()
     
     def extract_skills_from_text(self, text):
@@ -75,47 +75,26 @@ class HHParser:
         return ', '.join(found_skills) if found_skills else 'не указаны'
     
     def check_work_format(self, vacancy_item, vacancy_detail):
-        """ДЕБАГ ВЕРСИЯ - посмотрим что на самом деле в API"""
+        """Определяем формат работы"""
         schedule = vacancy_item.get('schedule', {})
         schedule_id = schedule.get('id')
-        schedule_name = schedule.get('name', '')
         
-        print(f"🎯 ДЕБАГ Формата: {vacancy_item['name'][:30]}...")
-        print(f"   📅 Schedule ID: '{schedule_id}'")
-        print(f"   📅 Schedule Name: '{schedule_name}'")
-        
-        # Простая логика - берем ТОЛЬКО из schedule.id
+        # Сначала проверяем schedule.id
         if schedule_id == 'remote':
-            result = 'remote'
-        elif schedule_id in ['fullDay', 'shift', 'flexible']:
-            result = 'office'
-        else:
-            result = 'unknown'
+            return 'remote'
         
-        print(f"   ✅ Результат: {result}")
-        print("-" * 40)
+        # Проверяем текст на удаленку
+        name = vacancy_item.get('name', '').lower()
+        desc = vacancy_detail.get('description', '').lower()
+        text = f"{name} {desc}"
         
-        return result
+        remote_keywords = ['удален', 'remote', 'дистанцион', 'work from home', 'удалён']
+        if any(keyword in text for keyword in remote_keywords):
+            return 'remote'
+        
+        # Все остальное - офис (включая гибрид)
+        return 'office'
     
-    def is_suitable_location(self, work_format, area_id):
-        """Упрощенная версия для теста"""
-        is_tyumen = area_id == GEO_CONFIG['preferred_city_id']
-        
-        print(f"📍 Гео-фильтр: Тюмень={is_tyumen}, Формат={work_format}")
-        
-        # Тюмень - ВСЕ форматы
-        if is_tyumen:
-            print("   ✅ Тюмень - подходит любой формат")
-            return True
-        
-        # Другие города - только удаленка
-        if work_format == 'remote':
-            print("   ✅ Другой город - подходит remote")
-            return True
-        else:
-            print(f"   ❌ Другой город - НЕ подходит {work_format}")
-            return False
-        
     def parse_salary(self, salary_data):
         """Корректная обработка зарплаты"""
         if not salary_data:
@@ -124,7 +103,6 @@ class HHParser:
         salary_from = salary_data.get('from')
         salary_to = salary_data.get('to')
         
-        # Конвертируем в рубли если указано в другой валюте
         if salary_data.get('currency') != 'RUR':
             if salary_from:
                 salary_from = salary_from * 70
@@ -134,75 +112,28 @@ class HHParser:
         return salary_from, salary_to
     
     def categorize_vacancy(self, vacancy):
-        """Расширенная категоризация вакансий"""
+        """Категоризация на основе конфига с приоритетами"""
         title = vacancy['name'].lower()
         desc = vacancy.get('description', '').lower()
         skills = vacancy.get('skills', '').lower()
         
-        text = f"{title} {desc} {skills}"
+        text = f" {title} {desc} {skills} "
         
-        categories_priority = [
-            {
-                'name': 'automation',
-                'keywords': ['n8n', 'make.com', 'zapier', 'rpa', 'workflow', 'интеграц', 'автоматизац']
-            },
-            {
-                'name': 'data_engineering', 
-                'keywords': ['airflow', 'etl', 'data pipeline', 'dbt', 'data engineer', 'data engineering']
-            },
-            {
-                'name': 'bi',
-                'keywords': ['power bi', 'tableau', 'superset', 'metabase', 'bi analyst', 'дашборд', 'dashboard']
-            },
-            {
-                'name': 'python_sql',
-                'keywords': ['python', 'sql', 'pandas', 'numpy', 'data analysis', 'scripting']
-            },
-            {
-                'name': 'excel',
-                'keywords': [
-                    'excel', 'vba', 'макрос', 'power query', 'сводн', 'macro',
-                    'pivot table', 'pivot', 'сводная таблица', 'сводные таблицы',
-                    'vlookup', 'впр', 'xlookup', 'index match', 'поискправ',
-                    'power pivot', 'get transform', 'фильтры', 'advanced filter',
-                    'условное форматирование', 'conditional formatting',
-                    'диаграмма', 'chart', 'график', 'sparkline',
-                    'data analysis', 'анализ данных', 'excel аналитик',
-                    'формулы'
-                ]
-            },
-            {
-                'name': 'documentation',
-                'keywords': [
-                    'confluence', 'документац', 'техническ', 'инструкц', 'руководств',
-                    'technical writer', 'технический писатель', 'документация',
-                    'база знаний', 'knowledge base', 'мануал', 'manual', 
-                    'техписатель', 'тех писатель', 'write documentation'
-                ]
-            },
-            {
-                'name': 'qa_testing',
-                'keywords': [
-                    'qa', 'quality assurance', 'тестировщик', 'тестирование', 'testing',
-                    'manual testing', 'ручное тестирование', 'автоматизация тестирования',
-                    'test automation', 'selenium', 'postman', 'api testing', 'тестирование api',
-                    'functional testing', 'функциональное тестирование', 'regression testing',
-                    'регрессионное тестирование', 'test case', 'тест кейс', 'test plan'
-                    , 'bug report', 'баг репорт',  'jira', 'testrail',
-                    'qc', 'quality control', 'контроль качества', 'junior qa', 'trainee qa',
-                    'qa engineer', 'инженер по тестированию', 'software tester'
-                ]
-            },
-            {
-                'name':'archivist', 
-                'keywords': ['архивариус', 'архив', 'делопроизводитель', 'делопроизводство', 'канцелярия']
-            }
-        ]
+        from config import CATEGORIES
+        sorted_categories = sorted(CATEGORIES.items(), key=lambda x: x[1]['priority'])
         
-        for category in categories_priority:
-            for keyword in category['keywords']:
-                if keyword in text:
-                    return category['name']
+        for category_name, category_data in sorted_categories:
+            keywords = category_data['keywords']
+            
+            has_keywords = any(f' {kw} ' in text for kw in keywords)
+            
+            if 'exclude' in category_data:
+                has_exclude = any(f' {kw} ' in text for kw in category_data['exclude'])
+                if has_keywords and not has_exclude:
+                    return category_name
+            else:
+                if has_keywords:
+                    return category_name
         
         return 'other'
     
@@ -259,207 +190,145 @@ class HHParser:
         return {}
     
     def get_hh_vacancies(self):
-        """Основной метод получения вакансий - РАЗДЕЛЬНЫЙ поиск"""
+        """Загружаем ВСЕ вакансии одним запросом -> фильтруем на нашей стороне"""
         url = "https://api.hh.ru/vacancies"
         all_vacancies = []
         
-        # 1. СНАЧАЛА ИЩЕМ ПО ТЮМЕНИ (все форматы работы)
-        print("🎯 ЭТАП 1: ПОИСК ПО ТЮМЕНИ (офис/гибрид/удаленка)")
-        print("=" * 50)
+        # ОДИН большой запрос - ВСЕ вакансии России
+        params = {
+            'text': 'python OR sql OR vba OR excel OR аналитик OR данные OR разработчик OR тестировщик OR 1с OR бухгалтер OR оператор OR специалист OR BI аналитик OR n8n OR Airflow OR superset ',  # Широкий охват
+            'area': 113,  # Вся Россия
+            'per_page': 100,  # Максимум на странице
+            'page': 0,
+            'period': 7,  # Только за последние 7 дней (свежие)
+        }
         
-        for keyword in KEYWORDS:
-            print(f"🔍 Тюмень: {keyword}")
+        print("🔍 Загружаем ВСЕ подходящие вакансии России за 7 дней...")
+        
+        try:
+            response = self.session.get(url, params=params, timeout=15)
+            data = response.json()
             
-            page = 0
-            total_pages = 1
+            found = data.get('found', 0)
+            pages = data.get('pages', 1)
             
-            while page < total_pages:
-                params = {
-                    'text': keyword,
-                    'area': 1410,  # Только Тюмень!
-                    'per_page': 20,
-                    'page': page,
-                    'order_by': 'publication_time',
-                }
-                
-                try:
-                    response = self.session.get(url, params=params, timeout=10)
+            print(f"📨 Найдено вакансий по запросу: {found}")
+            print(f"📄 Страниц для обработки: {pages}")
+            
+            # Обрабатываем ВСЕ страницы
+            for page in range(pages):
+                if page > 0:  # Первую страницу уже загрузили
+                    params['page'] = page
+                    response = self.session.get(url, params=params, timeout=15)
                     data = response.json()
-                    
-                    total_pages = min(data.get('pages', 1), 2)  # Максимум 2 страницы
-                    found = data.get('found', 0)
-                    
-                    if page == 0:
-                        print(f"   📨 Найдено в Тюмени: {found}")
-                        print(f"   📄 Страниц для обработки: {total_pages}")
-                    
-                    print(f"   📖 Обрабатывается страница {page + 1}/{total_pages}")
-                    
-                    page_vacancies = 0
-                    for item in data.get('items', []):
-                        # Пропускаем старые вакансии
-                        published = datetime.fromisoformat(item['published_at'].replace('Z', '+00:00'))
-                        if datetime.now(published.tzinfo) - published > timedelta(days=10):
+                
+                print(f"📖 Обрабатывается страница {page + 1}/{pages}")
+                
+                page_count = 0
+                for item in data.get('items', []):
+                    try:
+                        # Базовые данные
+                        city = item.get('area', {}).get('name', 'Не указан')
+                        vacancy_id = item['id']
+                        
+                        # 🔥 ФИЛЬТР 1: Формат работы
+                        schedule_id = item.get('schedule', {}).get('id', '')
+                        work_format = 'remote' if schedule_id == 'remote' else 'office'
+                        
+                        # ОСНОВНОЙ ФИЛЬТР: Тюмень - все, другие города - только удаленка
+                        if city != 'Тюмень' and work_format != 'remote':
                             continue
                         
-                        # ФИЛЬТР ПО ОПЫТУ
-                        experience = item.get('experience', {})
-                        experience_id = experience.get('id')
+                        # 🔥 ФИЛЬТР 2: Опыт работы
+                        experience_id = item.get('experience', {}).get('id', '')
                         if experience_id not in ['noExperience', 'between1And3']:
                             continue
                         
-                        # Получаем детали
-                        vacancy_detail = self.get_vacancy_details(item['id'])
-                        time.sleep(0.1)
+                        # 🔥 ФИЛЬТР 3: Ключевые слова в названии
+                        name = item.get('name', '').lower()
                         
-                        # Определяем формат работы
-                        work_format = self.check_work_format(item, vacancy_detail)
+                        # Расширенный список профессий
+                        target_keywords = [
+                            'python', 'sql', 'excel', 'n8n', 'airflow', 'power bi', 'tableau',
+                            'data', 'аналитик', 'анализ', 'данн', 'etl', 'dash', 'дашборд',
+                            'qa', 'тестировщик', 'тестирование', 'testing', 
+                            '1с', 'бухгалтер', 'оператор', 'специалист',
+                            'архивариус', 'делопроизводитель', 'документац', 'архив',
+                            'confluence', 'автоматизац', 'rpa', 'workflow',
+                            'менеджер', 'администратор', 'координатор', 'помощник'
+                        ]
                         
-                        # Для Тюмени ВСЕ форматы подходят - сохраняем
-                        salary_from, salary_to = self.parse_salary(item.get('salary'))
+                        # Проверяем совпадение с любым ключевым словом
+                        has_keyword = any(keyword in name for keyword in target_keywords)
+                        if not has_keyword:
+                            continue
                         
-                        # УЛУЧШЕННАЯ ОБРАБОТКА SKILLS И DESCRIPTION
-                        skills_from_api = [s['name'] for s in item.get('key_skills', [])]
-                        if skills_from_api:
-                            cleaned_skills = ', '.join(skills_from_api)
-                        else:
-                            # Если API не дало skills, извлекаем из описания
-                            cleaned_skills = self.extract_skills_from_text(vacancy_detail.get('description', ''))
+                        # 🔥 ВСЕ фильтры пройдены - сохраняем вакансию
                         
-                        # Очищаем description от HTML тегов
-                        raw_description = vacancy_detail.get('description', '')
-                        cleaned_description = self.clean_html_tags(raw_description)[:1500]
+                        # Обработка зарплаты
+                        salary_data = item.get('salary')
+                        salary_from = None
+                        salary_to = None
                         
+                        if salary_data:
+                            salary_from = salary_data.get('from')
+                            salary_to = salary_data.get('to')
+                            
+                            if salary_data.get('currency') != 'RUR':
+                                if salary_from:
+                                    salary_from = salary_from * 70
+                                if salary_to:
+                                    salary_to = salary_to * 70
+                        
+                        # Получаем полное описание
+                        vacancy_detail = self.get_vacancy_details(vacancy_id)
+                        full_description = ""
+                        
+                        if vacancy_detail:
+                            raw_description = vacancy_detail.get('description', '')
+                            full_description = self.clean_html_tags(raw_description)[:2000]
+                        
+                        # Формируем вакансию
                         vacancy = {
-                            'hh_id': int(item['id']),
+                            'hh_id': int(vacancy_id),
                             'name': self.clean_text(item['name']),
                             'company': self.clean_text(item['employer']['name']),
                             'salary_from': salary_from,
                             'salary_to': salary_to,
                             'url': item['alternate_url'],
-                            'skills': cleaned_skills,
-                            'description': cleaned_description,
+                            'skills': ', '.join([s['name'] for s in item.get('key_skills', [])]),
+                            'description': full_description,
                             'work_format': work_format,
-                            'city': item.get('area', {}).get('name', 'Тюмень')
+                            'city': city
                         }
                         
                         vacancy['category'] = self.categorize_vacancy(vacancy)
                         vacancy['relevance_score'] = self.calculate_relevance(vacancy, work_format)
                         
                         all_vacancies.append(vacancy)
-                        page_vacancies += 1
-                        print(f"   ✅ Тюмень: {vacancy['name'][:40]}... | {work_format}")
-                    
-                    print(f"   📊 На странице {page + 1} добавлено: {page_vacancies} вакансий")
-                    page += 1
-                    time.sleep(0.3)
-                    
-                except Exception as e:
-                    print(f"❌ Ошибка при поиске в Тюмени {keyword}, страница {page}: {e}")
-                    break
-        
-        # 2. ПОТОМ ИЩЕМ ПО РОССИИ (только удаленка, без Тюмени)
-        print("\n🎯 ЭТАП 2: ПОИСК ПО РОССИИ (только удаленка, без Тюмени)")
-        print("=" * 50)
-        
-        for keyword in KEYWORDS:
-            print(f"🔍 Россия (без Тюмени): {keyword}")
-            
-            page = 0
-            total_pages = 1
-            
-            while page < total_pages:
-                params = {
-                    'text': f'{keyword} !Тюмень',  # ❌ Исключаем Тюмень
-                    'area': 113,  # Вся Россия
-                    'per_page': 30,
-                    'page': page,
-                    'order_by': 'publication_time',
-                }
+                        page_count += 1
+                        print(f"✅ {city}: {vacancy['name'][:50]}... | {work_format}")
+                        
+                    except Exception as e:
+                        print(f"⚠️ Ошибка обработки вакансии: {e}")
+                        continue
                 
-                try:
-                    response = self.session.get(url, params=params, timeout=10)
-                    data = response.json()
-                    
-                    total_pages = min(data.get('pages', 1), 2)  # Максимум 2 страницы
-                    found = data.get('found', 0)
-                    
-                    if page == 0:
-                        print(f"   📨 Найдено в России (без Тюмени): {found}")
-                        print(f"   📄 Страниц для обработки: {total_pages}")
-                    
-                    print(f"   📖 Обрабатывается страница {page + 1}/{total_pages}")
-                    
-                    page_vacancies = 0
-                    for item in data.get('items', []):
-                        # Пропускаем старые вакансии
-                        published = datetime.fromisoformat(item['published_at'].replace('Z', '+00:00'))
-                        if datetime.now(published.tzinfo) - published > timedelta(days=5):
-                            continue
-                        
-                        # ФИЛЬТР ПО ОПЫТУ
-                        experience = item.get('experience', {})
-                        experience_id = experience.get('id')
-                        if experience_id not in ['noExperience', 'between1And3']:
-                            continue
-                        
-                        # Получаем детали
-                        vacancy_detail = self.get_vacancy_details(item['id'])
-                        time.sleep(0.1)
-                        
-                        # Определяем формат работы
-                        work_format = self.check_work_format(item, vacancy_detail)
-                        
-                        # Фильтруем по локации (только удаленка для других городов)
-                        if work_format != 'remote':
-                            continue
-                        
-                        # Обрабатываем и сохраняем удаленку
-                        salary_from, salary_to = self.parse_salary(item.get('salary'))
-                        
-                        # УЛУЧШЕННАЯ ОБРАБОТКА SKILLS И DESCRIPTION
-                        skills_from_api = [s['name'] for s in item.get('key_skills', [])]
-                        if skills_from_api:
-                            cleaned_skills = ', '.join(skills_from_api)
-                        else:
-                            cleaned_skills = self.extract_skills_from_text(vacancy_detail.get('description', ''))
-                        
-                        # Очищаем description от HTML тегов
-                        raw_description = vacancy_detail.get('description', '')
-                        cleaned_description = self.clean_html_tags(raw_description)[:1500]
-                        
-                        vacancy = {
-                            'hh_id': int(item['id']),
-                            'name': self.clean_text(item['name']),
-                            'company': self.clean_text(item['employer']['name']),
-                            'salary_from': salary_from,
-                            'salary_to': salary_to,
-                            'url': item['alternate_url'],
-                            'skills': cleaned_skills,
-                            'description': cleaned_description,
-                            'work_format': work_format,
-                            'city': item.get('area', {}).get('name', 'Не указан')
-                        }
-                        
-                        vacancy['category'] = self.categorize_vacancy(vacancy)
-                        vacancy['relevance_score'] = self.calculate_relevance(vacancy, work_format)
-                        
-                        all_vacancies.append(vacancy)
-                        page_vacancies += 1
-                        print(f"   ✅ Россия: {vacancy['name'][:40]}... | {work_format}")
-                    
-                    print(f"   📊 На странице {page + 1} добавлено: {page_vacancies} вакансий")
-                    page += 1
-                    time.sleep(0.3)
-                    
-                except Exception as e:
-                    print(f"❌ Ошибка при поиске в России {keyword}, страница {page}: {e}")
-                    break
+                print(f"📊 На странице {page + 1} добавлено: {page_count} вакансий")
+                
+                # Задержка между страницами
+                if page < pages - 1:
+                    time.sleep(0.5)
+            
+            print(f"\n🎯 ИТОГО найдено подходящих вакансий: {len(all_vacancies)}")
+            
+        except Exception as e:
+            print(f"❌ Ошибка загрузки: {e}")
+            import traceback
+            traceback.print_exc()
         
         return all_vacancies
 
 def save_to_db(vacancies):
-    """Сохранение вакансий в базу данных"""
     conn = psycopg2.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
@@ -467,8 +336,26 @@ def save_to_db(vacancies):
     duplicate_count = 0
     error_count = 0
     
+    parser = HHParser()  # создаем парсер для очистки
+    
     for vac in vacancies:
         try:
+            # ИСПОЛЬЗУЕМ ТОЛЬКО clean_text_safe для всех полей
+            clean_vac = (
+                vac['hh_id'],
+                parser.clean_text_safe(vac['name'])[:500],
+                parser.clean_text_safe(vac['company'])[:255], 
+                vac['salary_from'], 
+                vac['salary_to'], 
+                vac['url'][:500],
+                parser.clean_text_safe(vac['skills'])[:1000],
+                parser.clean_text_safe(vac['description'])[:3000],
+                parser.clean_text_safe(vac['category'])[:50],
+                vac['relevance_score'], 
+                parser.clean_text_safe(vac['work_format'])[:20], 
+                parser.clean_text_safe(vac['city'])[:100]
+            )
+            
             cursor.execute("""
                 INSERT INTO vacancies 
                 (hh_id, name, company, salary_from, salary_to, url, skills, 
@@ -476,11 +363,7 @@ def save_to_db(vacancies):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (hh_id) DO NOTHING
                 RETURNING id
-            """, (
-                vac['hh_id'], vac['name'], vac['company'], vac['salary_from'], 
-                vac['salary_to'], vac['url'], vac['skills'], vac['description'],
-                vac['category'], vac['relevance_score'], vac['work_format'], vac['city']
-            ))
+            """, clean_vac)
             
             if cursor.fetchone():
                 new_count += 1
@@ -498,7 +381,7 @@ def save_to_db(vacancies):
     return new_count, duplicate_count, error_count
 
 if __name__ == "__main__":
-    print(f"🕒 {datetime.now()} - Запуск парсера HH.ru")
+    print(f"🕒 {datetime.now()} - Запуск ОПТИМИЗИРОВАННОГО парсера HH.ru")
     print(f"📍 Гео-фильтр: Тюмень - любой формат, другие города - только удаленка")
     print(f"💼 Опыт: без опыта или 1-3 года")
     print("=" * 60)
@@ -506,7 +389,7 @@ if __name__ == "__main__":
     parser = HHParser()
     vacancies = parser.get_hh_vacancies()
     
-    print(f"🎯 Найдено подходящих вакансий: {len(vacancies)}")
+    print(f"\n🎯 Найдено подходящих вакансий: {len(vacancies)}")
     
     if vacancies:
         new_count, duplicate_count, error_count = save_to_db(vacancies)

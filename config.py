@@ -22,7 +22,7 @@ KEYWORDS = [
     
     # BI & Dashboards
     'power bi', 'tableau', 'superset', 'metabase', 'bi analyst', 'business intelligence',
-    'дашборд', 'визуализац', 'data visualization', 'bi developer',
+    'дашборд', 'визуализац', 'data visualization', 'bi developer', 'bi разработчик',
     
     # Python/SQL & Scripting
     'python', 'sql', 'data analysis', 'аналитик', 'pandas', 'numpy', 'scripting',
@@ -43,6 +43,11 @@ KEYWORDS = [
     'manual testing', 'ручное тестирование', 'автоматизация тестирования',
     'test automation', 'selenium', 'postman', 'api testing', 'тестирование api',
     'functional testing', 'функциональное тестирование', 'test case', 'тест кейс',
+    
+    # NEW: Бизнес-аналитика
+    'бизнес-аналитик', 'бизнес аналитик', 'менеджер по данным', 
+    'data manager', 'business analyst', 'аналитик данных',
+    'powerpoint', 'управленческ', 'отчетност', 'презентац',
     
     # NEW: Архивариус и делопроизводитель
     'архивариус', 'архив', 'делопроизводитель', 'делопроизводство', 'канцелярия',
@@ -69,33 +74,48 @@ CATEGORIES = {
         'priority': 2
     },
     'bi': {
-        'keywords': ['power bi', 'tableau', 'superset', 'metabase', 'дашборд', 'dashboard'],
+        'keywords': [
+            'power bi', 'tableau', 'superset', 'metabase', 'qlik', 
+            'дашборд', 'dashboard', 'bi developer', 'bi разработчик',
+            'bi analyst', 'bi аналитик', 'business intelligence',
+            'визуализац данных', 'data visualization', 'отчетность'
+        ],
         'priority': 3
+    },
+    'business_analysis': {
+        'keywords': [
+            'бизнес-аналитик', 'бизнес аналитик', 'менеджер по данным',
+            'business analyst', 'data manager', 'аналитик данных',
+            'powerpoint', 'управленческ', 'отчетност', 'презентац',
+            'сводн', 'power point', 'pdf отчет'
+        ],
+        'priority': 4,
+        'exclude': ['1с', 'бухгалтер', 'оператор']
     },
     'qa_testing': {
         'keywords': ['qa', 'тестировщик', 'тестирование', 'selenium', 'test automation'],
-        'priority': 4
+        'priority': 5
     },
     'documentation': {
         'keywords': ['technical writer', 'технический писатель', 'confluence', 'документац'],
-        'priority': 5
+        'priority': 6
     },
     'archivist': {
         'keywords': ['архивариус', 'архив', 'делопроизводитель', 'делопроизводство', 'канцелярия'],
-        'priority': 6
+        'priority': 7
     },
     'data_operator': {
         'keywords': ['оператор данных', 'data entry', 'ввод данных', 'обработк данных'],
-        'priority': 7
+        'priority': 8
     },
     'excel': {
         'keywords': ['excel', 'vba', 'макрос', 'power query', 'сводн'],
-        'priority': 8,
+        'priority': 9,
         'exclude': ['python', 'sql', 'разработк', 'developer', 'программист']
     },
     'python_sql': {
         'keywords': ['python', 'sql', 'pandas', 'data analysis', 'аналитик'],
-        'priority': 9
+        'priority': 10
     }
 }
 

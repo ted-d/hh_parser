@@ -24,7 +24,23 @@ class HHParser:
             return cleaned_text.strip()
         except:
             return ""
-    
+    def clean_text_safe(self, text, max_length=2000):
+        """УЛЬТРА-безопасная очистка для БД"""
+        if not text:
+            return ""
+
+        try:
+            # 🔒 Убираем ВСЕ невалидные Unicode-символы (включая \u3164)
+            text = text.encode('utf-8', 'ignore').decode('utf-8')
+
+            # Жёсткая очистка
+            cleaned = re.sub(r'[^\w\s\.\,\-\+\!\?\(\)\:\;\@\#\%\&\=\*\\\/]', '', text)
+            cleaned = re.sub(r'\s+', ' ', cleaned)
+
+            return cleaned.strip()[:max_length]
+        except Exception:
+            return text[:max_length] if text else ""
+ 
     def clean_html_tags(self, text):
         """Очистка текста от HTML тегов"""
         if not text:
@@ -53,7 +69,7 @@ class HHParser:
             'python', 'sql', 'excel', 'n8n', 'make.com', 'zapier', 'airflow', 
             'power bi', 'tableau', 'superset', 'metabase', 'vba', 'pandas',
             'numpy', 'etl', 'api', 'docker', 'git', 'postgresql', 'mysql',
-            'selenium', 'postman', 'jira', 'confluence'
+            'selenium', 'postman', 'jira', 'confluence','1С'
         ]
         
         found_skills = []
@@ -185,7 +201,7 @@ class HHParser:
         
         # ОДИН большой запрос - ВСЕ вакансии России
         params = {
-            'text': 'python OR sql OR vba OR excel OR аналитик OR данные OR разработчик OR тестировщик OR 1с OR бухгалтер OR оператор OR специалист OR BI аналитик OR n8n OR Airflow OR superset ',  # Широкий охват
+            'text': 'python OR sql OR vba OR excel OR аналитик OR данные OR разработчик OR тестировщик OR 1с OR 1С OR бухгалтер OR оператор OR специалист OR BI аналитик OR n8n OR Airflow OR superset OR Технический писатель',  # Широкий охват
             'area': 113,  # Вся Россия
             'per_page': 100,  # Максимум на странице
             'page': 0,
@@ -241,7 +257,7 @@ class HHParser:
                             'python', 'sql', 'excel', 'n8n', 'airflow', 'power bi', 'tableau',
                             'data', 'аналитик', 'анализ', 'данн', 'etl', 'dash', 'дашборд',
                             'qa', 'тестировщик', 'тестирование', 'testing', 
-                            '1с', 'бухгалтер', 'оператор', 'специалист',
+                            '1с','1С', 'бухгалтер', 'оператор', 'специалист',
                             'архивариус', 'делопроизводитель', 'документац', 'архив',
                             'confluence', 'автоматизац', 'rpa', 'workflow',
                             'менеджер', 'администратор', 'координатор', 'помощник'
@@ -318,7 +334,6 @@ class HHParser:
         return all_vacancies
 
 def save_to_db(vacancies):
-    """Сохранение вакансий в базу данных"""
     conn = psycopg2.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
@@ -326,8 +341,26 @@ def save_to_db(vacancies):
     duplicate_count = 0
     error_count = 0
     
+    parser = HHParser()  # создаем парсер для очистки
+    
     for vac in vacancies:
         try:
+            # ИСПОЛЬЗУЕМ ТОЛЬКО clean_text_safe для всех полей
+            clean_vac = (
+                vac['hh_id'],
+                parser.clean_text_safe(vac['name'])[:500],
+                parser.clean_text_safe(vac['company'])[:255], 
+                vac['salary_from'], 
+                vac['salary_to'], 
+                vac['url'][:500],
+                parser.clean_text_safe(vac['skills'])[:1000],
+                parser.clean_text_safe(vac['description'])[:3000],
+                parser.clean_text_safe(vac['category'])[:50],
+                vac['relevance_score'], 
+                parser.clean_text_safe(vac['work_format'])[:20], 
+                parser.clean_text_safe(vac['city'])[:100]
+            )
+            
             cursor.execute("""
                 INSERT INTO vacancies 
                 (hh_id, name, company, salary_from, salary_to, url, skills, 
@@ -335,11 +368,7 @@ def save_to_db(vacancies):
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (hh_id) DO NOTHING
                 RETURNING id
-            """, (
-                vac['hh_id'], vac['name'], vac['company'], vac['salary_from'], 
-                vac['salary_to'], vac['url'], vac['skills'], vac['description'],
-                vac['category'], vac['relevance_score'], vac['work_format'], vac['city']
-            ))
+            """, clean_vac)
             
             if cursor.fetchone():
                 new_count += 1
